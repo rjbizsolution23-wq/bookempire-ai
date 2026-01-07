@@ -1,0 +1,326 @@
+// ============================================
+// BookEmpire AI - Database Schema
+// Complete database design for book generation platform
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USERS & AUTHENTICATION
+// ============================================
+
+model User {
+  id                   String         @id @default(uuid())
+  clerkUserId          String         @unique @map("clerk_user_id")
+  email                String         @unique
+  fullName             String?        @map("full_name")
+  avatarUrl            String?        @map("avatar_url")
+  subscriptionTier     String         @default("free") @map("subscription_tier")
+  subscriptionStatus   String         @default("active") @map("subscription_status")
+  stripeCustomerId     String?        @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?        @map("stripe_subscription_id")
+  booksGeneratedCount  Int            @default(0) @map("books_generated_count")
+  monthlyBookLimit     Int            @default(3) @map("monthly_book_limit")
+  totalRevenueCents    Int            @default(0) @map("total_revenue_cents")
+  onboardingCompleted  Boolean        @default(false) @map("onboarding_completed")
+  emailVerified        Boolean        @default(false) @map("email_verified")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  lastLoginAt          DateTime?      @map("last_login_at")
+  
+  bookProjects         BookProject[]
+  payments             Payment[]
+  activityLogs         ActivityLog[]
+  
+  @@index([email])
+  @@index([clerkUserId])
+  @@index([stripeCustomerId])
+  @@map("users")
+}
+
+// ============================================
+// BOOK PROJECTS
+// ============================================
+
+model BookProject {
+  id                     String    @id @default(uuid())
+  userId                 String    @map("user_id")
+  title                  String
+  subtitle               String?
+  authorName             String?   @map("author_name")
+  inputType              String?   @map("input_type")
+  inputContent           String?   @map("input_content") @db.Text
+  targetWordCount        Int       @default(50000) @map("target_word_count")
+  actualWordCount        Int       @default(0) @map("actual_word_count")
+  genre                  String?
+  targetAudience         String?   @map("target_audience") @db.Text
+  language               String    @default("en")
+  status                 String    @default("draft")
+  generationProgress     Int       @default(0) @map("generation_progress")
+  coverUrl               String?   @map("cover_url")
+  backCoverUrl           String?   @map("back_cover_url")
+  pdfUrl                 String?   @map("pdf_url")
+  epubUrl                String?   @map("epub_url")
+  mobiUrl                String?   @map("mobi_url")
+  manuscriptUrl          String?   @map("manuscript_url")
+  seoKeywords            Json?     @map("seo_keywords")
+  amazonCategories       Json?     @map("amazon_categories")
+  metadata               Json?
+  researchSources        Json?     @map("research_sources")
+  generationStartedAt    DateTime? @map("generation_started_at")
+  generationCompletedAt  DateTime? @map("generation_completed_at")
+  publishedAt            DateTime? @map("published_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapters               BookChapter[]
+  covers                 BookCover[]
+  generationJobs         GenerationJob[]
+  publishingPlatforms    PublishingPlatform[]
+  researchCitations      BookResearchCitation[]
+  activityLogs           ActivityLog[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("book_projects")
+}
+
+// ============================================
+// BOOK CHAPTERS
+// ============================================
+
+model BookChapter {
+  id              String    @id @default(uuid())
+  bookProjectId   String    @map("book_project_id")
+  chapterNumber   Int       @map("chapter_number")
+  title           String
+  content         String?   @db.Text
+  wordCount       Int       @default(0) @map("word_count")
+  status          String    @default("pending")
+  outline         String?   @db.Text
+  keyPoints       Json?     @map("key_points")
+  generatedAt     DateTime? @map("generated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  bookProject     BookProject @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  citations       BookResearchCitation[]
+  
+  @@unique([bookProjectId, chapterNumber])
+  @@index([bookProjectId])
+  @@index([status])
+  @@map("book_chapters")
+}
+
+// ============================================
+// BOOK COVERS
+// ============================================
+
+model BookCover {
+  id              String   @id @default(uuid())
+  bookProjectId   String   @map("book_project_id")
+  coverType       String   @map("cover_type")
+  imageUrl        String   @map("image_url")
+  thumbnailUrl    String?  @map("thumbnail_url")
+  designPrompt    String?  @map("design_prompt") @db.Text
+  modelUsed       String   @default("nano-banana-pro") @map("model_used")
+  resolution      String?
+  fileSizeBytes   Int?     @map("file_size_bytes")
+  isSelected      Boolean  @default(false) @map("is_selected")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  bookProject     BookProject @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  
+  @@index([bookProjectId])
+  @@index([bookProjectId, isSelected])
+  @@map("book_covers")
+}
+
+// ============================================
+// RESEARCH PAPERS
+// ============================================
+
+model ResearchPaper {
+  id              String   @id @default(uuid())
+  externalId      String?  @unique @map("external_id")
+  title           String   @db.Text
+  authors         Json?
+  abstract        String?  @db.Text
+  publishedDate   DateTime? @map("published_date")
+  source          String?
+  pdfUrl          String?  @map("pdf_url")
+  citationCount   Int      @default(0) @map("citation_count")
+  keywords        Json?
+  fullText        String?  @map("full_text") @db.Text
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  citations       BookResearchCitation[]
+  
+  @@index([externalId])
+  @@index([source])
+  @@map("research_papers")
+}
+
+// ============================================
+// BOOK-RESEARCH RELATIONSHIPS
+// ============================================
+
+model BookResearchCitation {
+  id              String   @id @default(uuid())
+  bookProjectId   String   @map("book_project_id")
+  researchPaperId String   @map("research_paper_id")
+  chapterId       String?  @map("chapter_id")
+  citationText    String?  @map("citation_text") @db.Text
+  citationContext String?  @map("citation_context") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  bookProject     BookProject    @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  researchPaper   ResearchPaper  @relation(fields: [researchPaperId], references: [id], onDelete: Cascade)
+  chapter         BookChapter?   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  
+  @@unique([bookProjectId, researchPaperId])
+  @@index([bookProjectId])
+  @@index([researchPaperId])
+  @@map("book_research_citations")
+}
+
+// ============================================
+// PUBLISHING PLATFORMS
+// ============================================
+
+model PublishingPlatform {
+  id              String    @id @default(uuid())
+  bookProjectId   String    @map("book_project_id")
+  platform        String
+  platformBookId  String?   @map("platform_book_id")
+  publishStatus   String    @default("pending") @map("publish_status")
+  url             String?
+  priceUsd        Decimal?  @map("price_usd") @db.Decimal(10, 2)
+  royaltyRate     Decimal?  @map("royalty_rate") @db.Decimal(5, 2)
+  totalSalesCount Int       @default(0) @map("total_sales_count")
+  totalRevenueCents Int     @default(0) @map("total_revenue_cents")
+  currentRank     Int?      @map("current_rank")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  publishedAt     DateTime? @map("published_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  bookProject     BookProject @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  bookSales       BookSale[]
+  
+  @@unique([bookProjectId, platform])
+  @@index([bookProjectId])
+  @@index([platform])
+  @@index([publishStatus])
+  @@map("publishing_platforms")
+}
+
+// ============================================
+// SALES & ANALYTICS
+// ============================================
+
+model BookSale {
+  id                    String   @id @default(uuid())
+  bookProjectId         String   @map("book_project_id")
+  publishingPlatformId  String   @map("publishing_platform_id")
+  saleDate              DateTime @map("sale_date")
+  quantitySold          Int      @default(0) @map("quantity_sold")
+  revenueCents          Int      @default(0) @map("revenue_cents")
+  royaltyCents          Int      @default(0) @map("royalty_cents")
+  countryCode           String?  @map("country_code")
+  metadata              Json?
+  createdAt             DateTime @default(now()) @map("created_at")
+  
+  publishingPlatform    PublishingPlatform @relation(fields: [publishingPlatformId], references: [id], onDelete: Cascade)
+  
+  @@index([bookProjectId])
+  @@index([publishingPlatformId])
+  @@index([saleDate(sort: Desc)])
+  @@map("book_sales")
+}
+
+// ============================================
+// GENERATION JOBS QUEUE
+// ============================================
+
+model GenerationJob {
+  id              String    @id @default(uuid())
+  bookProjectId   String    @map("book_project_id")
+  jobType         String    @map("job_type")
+  status          String    @default("queued")
+  priority        Int       @default(0)
+  progress        Int       @default(0)
+  errorMessage    String?   @map("error_message") @db.Text
+  metadata        Json?
+  startedAt       DateTime? @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  
+  bookProject     BookProject @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  
+  @@index([bookProjectId])
+  @@index([status])
+  @@index([priority, createdAt])
+  @@map("generation_jobs")
+}
+
+// ============================================
+// PAYMENTS & SUBSCRIPTIONS
+// ============================================
+
+model Payment {
+  id                      String    @id @default(uuid())
+  userId                  String    @map("user_id")
+  stripePaymentIntentId   String?   @unique @map("stripe_payment_intent_id")
+  stripeInvoiceId         String?   @map("stripe_invoice_id")
+  amountCents             Int       @map("amount_cents")
+  currency                String    @default("USD")
+  paymentType             String    @map("payment_type")
+  status                  String
+  description             String?   @db.Text
+  metadata                Json?
+  paidAt                  DateTime? @map("paid_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([stripePaymentIntentId])
+  @@index([status])
+  @@map("payments")
+}
+
+// ============================================
+// ACTIVITY LOGS
+// ============================================
+
+model ActivityLog {
+  id              String       @id @default(uuid())
+  userId          String       @map("user_id")
+  bookProjectId   String?      @map("book_project_id")
+  action          String
+  description     String?      @db.Text
+  ipAddress       String?      @map("ip_address")
+  userAgent       String?      @map("user_agent") @db.Text
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookProject     BookProject? @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([bookProjectId])
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
